@@ -47,6 +47,19 @@ public class PositionFixTests
     }
 
     [Fact]
+    public void Timestamp_is_truncated_to_database_precision_so_resends_are_detected_as_duplicates()
+    {
+        var precise = TestData.Now.AddTicks(1_234_567); // 0,1234567 sn
+        var vehicle = new Vehicle(Guid.NewGuid(), "ALFA-1");
+        vehicle.ApplyFix(PositionFix.Create(39, 32, 1, 0, precise, TestData.Now.AddSeconds(1)));
+
+        var resend = PositionFix.Create(39, 32, 1, 0, precise, TestData.Now.AddSeconds(1));
+
+        Assert.Equal(TestData.Now.AddTicks(1_234_560), resend.TimestampUtc);
+        Assert.False(vehicle.IsNewerThanLastFix(resend));
+    }
+
+    [Fact]
     public void All_errors_are_reported_together()
     {
         var ex = Assert.Throws<DomainValidationException>(() =>

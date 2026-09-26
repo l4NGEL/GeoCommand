@@ -43,6 +43,13 @@ public sealed record PositionFix
 
         if (errors.Count > 0) throw new DomainValidationException(errors);
 
-        return new PositionFix(latitude, longitude, speedMps, headingDegrees, timestamp.ToUniversalTime());
+        return new PositionFix(latitude, longitude, speedMps, headingDegrees, TruncateToMicroseconds(timestamp.ToUniversalTime()));
     }
+
+    /// <summary>
+    /// PostgreSQL timestamptz mikrosaniye hassasiyetindedir, .NET ise 100 ns. Yuvarlanmazsa veritabanından okunan
+    /// son zaman ile aynı bildirimin tekrarı farklı görünür ve yinelenen bildirim "yeni" sanılır.
+    /// </summary>
+    private static DateTimeOffset TruncateToMicroseconds(DateTimeOffset value) =>
+        new(value.Ticks - value.Ticks % (TimeSpan.TicksPerMillisecond / 1000), value.Offset);
 }

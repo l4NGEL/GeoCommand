@@ -9,7 +9,9 @@ using GeoCommand.Infrastructure.Persistence;
 using Microsoft.AspNetCore.SignalR;
 using Serilog;
 
-Log.Logger = new LoggerConfiguration().WriteTo.Console().CreateBootstrapLogger();
+// Başlangıç hataları için geçici logger; host kurulunca yapılandırmadaki logger ile değiştirilir.
+// (CreateBootstrapLogger yerine düz logger: entegrasyon testleri aynı süreçte birden çok host açar.)
+Log.Logger = new LoggerConfiguration().WriteTo.Console().CreateLogger();
 
 try
 {
@@ -26,6 +28,8 @@ try
 
     builder.Services.AddProblemDetails();
     builder.Services.AddExceptionHandler<ApiExceptionHandler>();
+    // Bozuk JSON / geçersiz parametre her ortamda ApiExceptionHandler'a düşsün (varsayılan: yalnızca Development).
+    builder.Services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
     builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
     builder.Services.AddOpenApi();
     builder.Services.AddHealthChecks().AddDbContextCheck<GeoCommandDbContext>("database");
