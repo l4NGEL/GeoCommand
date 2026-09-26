@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GeoCommand.Api/GeoCommand.Api.csproj" />
+    <Project Path="src/GeoCommand.Application/GeoCommand.Application.csproj" />
+    <Project Path="src/GeoCommand.Contracts/GeoCommand.Contracts.csproj" />
+    <Project Path="src/GeoCommand.Desktop/GeoCommand.Desktop.csproj" />
+    <Project Path="src/GeoCommand.Domain/GeoCommand.Domain.csproj" />
+    <Project Path="src/GeoCommand.Infrastructure/GeoCommand.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GeoCommand.IntegrationTests/GeoCommand.IntegrationTests.csproj" />
+    <Project Path="tests/GeoCommand.UnitTests/GeoCommand.UnitTests.csproj" />
+  </Folder>
+</Solution>
