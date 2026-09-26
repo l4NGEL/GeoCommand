@@ -1,0 +1,21 @@
+<UserControl x:Class="GeoCommand.Desktop.Views.MapView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mapsui="clr-namespace:Mapsui.UI.Wpf;assembly=Mapsui.UI.Wpf">
+    <Grid Background="#E9EEF3">
+        <mapsui:MapControl x:Name="MapControl" />
+
+        <!-- Altlık kullanılmıyorsa veya indirilemiyorsa vektör katmanlar yine çizilir. -->
+        <Border x:Name="OfflineBadge" Visibility="Collapsed" HorizontalAlignment="Left" VerticalAlignment="Top"
+                Margin="8" Padding="8,4" Background="#CC1F2A37" CornerRadius="3">
+            <TextBlock Foreground="White" Text="Çevrimdışı altlık: yalnızca vektör katmanlar (koordinatlar WGS84)" />
+        </Border>
+
+        <Border x:Name="Attribution" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,4,4"
+                Padding="6,2" Background="#DDFFFFFF" CornerRadius="2">
+            <TextBlock FontSize="11" Foreground="#333">
+                <Run Text="© " /><Hyperlink NavigateUri="https://www.openstreetmap.org/copyright" RequestNavigate="OnAttributionClick">OpenStreetMap</Hyperlink><Run Text=" katkıda bulunanlar" />
+            </TextBlock>
+        </Border>
+    </Grid>
+</UserControl>
