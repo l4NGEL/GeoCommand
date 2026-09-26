@@ -1,0 +1,39 @@
+{
+  // Ankara merkezde dört simüle araç. Aynı seed her çalıştırmada aynı konum dizisini üretir.
+  // Rota noktaları [enlem, boylam] (WGS84). Yollar temsilidir, gerçek yol ağını izlemez.
+  "name": "ankara-devriye",
+  "description": "Kızılay, Sıhhiye, Ulus ve ODTÜ çevresinde dört aracın döngüsel devriyesi.",
+  "seed": 4242,
+  "tickSeconds": 1.0,
+  "vehicles": [
+    {
+      "callsign": "ALFA-1",
+      "speedMps": 18,
+      "speedJitter": 0.15,
+      "loop": true,
+      "route": [[39.9208, 32.8541], [39.9300, 32.8580], [39.9265, 32.8660], [39.9180, 32.8600]]
+    },
+    {
+      "callsign": "BRAVO-2",
+      "speedMps": 15,
+      "speedJitter": 0.1,
+      "dwellSeconds": 8,
+      "loop": true,
+      "route": [[39.9410, 32.8540], [39.9300, 32.8580], [39.9208, 32.8541], [39.9060, 32.8600]]
+    },
+    {
+      "callsign": "CHARLIE-3",
+      "speedMps": 20,
+      "speedJitter": 0.1,
+      "loop": true,
+      "route": [[39.9000, 32.8280], [39.9180, 32.8100], [39.9208, 32.8541], [39.9030, 32.8620]]
+    },
+    {
+      "callsign": "DELTA-4",
+      "speedMps": 40,
+      "speedJitter": 0.05,
+      "loop": true,
+      "route": [[39.8910, 32.7800], [39.8260, 32.8300], [39.8900, 32.8620]]
+    }
+  ]
+}

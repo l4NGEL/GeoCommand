@@ -1,0 +1,32 @@
+{
+  // Bölge olaylarını hızlı göstermek için kısa senaryo: iki araç Kızılay meydanını sürekli kesiyor,
+  // biri Güvenpark'ta uzun beklemeli. DELTA-4 bu senaryoda yok; 15 sn sonra çevrimdışı olur.
+  "name": "kizilay-gecis",
+  "description": "ALFA-1 doğu-batı, BRAVO-2 kuzey-güney ekseninde Kızılay'ı kesiyor; CHARLIE-3 bekleme yapıyor.",
+  "seed": 7,
+  "tickSeconds": 1.0,
+  "vehicles": [
+    {
+      "callsign": "ALFA-1",
+      "speedMps": 25,
+      "speedJitter": 0.1,
+      "loop": true,
+      "route": [[39.9208, 32.8440], [39.9208, 32.8640]]
+    },
+    {
+      "callsign": "BRAVO-2",
+      "speedMps": 20,
+      "speedJitter": 0.1,
+      "loop": true,
+      "route": [[39.9130, 32.8541], [39.9290, 32.8541]]
+    },
+    {
+      "callsign": "CHARLIE-3",
+      "speedMps": 5,
+      "speedJitter": 0.0,
+      "dwellSeconds": 30,
+      "loop": true,
+      "route": [[39.9195, 32.8520], [39.9185, 32.8535]]
+    }
+  ]
+}

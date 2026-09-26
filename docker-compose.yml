@@ -1,0 +1,24 @@
+# GeoCommand yerel veritabanı: PostgreSQL 17 + PostGIS 3.5
+# Kullanım: .env.example dosyasını .env olarak kopyalayıp parolayı değiştirin, sonra `docker compose up -d`.
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    container_name: geocommand-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${GEOCOMMAND_DB_NAME:-geocommand}
+      POSTGRES_USER: ${GEOCOMMAND_DB_USER:-geocommand}
+      POSTGRES_PASSWORD: ${GEOCOMMAND_DB_PASSWORD:?GEOCOMMAND_DB_PASSWORD .env dosyasında tanımlanmalı}
+    ports:
+      # Makinede yerel bir PostgreSQL 5432'yi kullanıyor olabilir; bu yüzden varsayılan 5433.
+      - "${GEOCOMMAND_DB_PORT:-5433}:5432"
+    volumes:
+      - geocommand-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  geocommand-db-data:
