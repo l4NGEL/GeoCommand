@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Örnek veri kaynağı plugin'i. API bu projeye başvurmaz; derleme çıktısı artifacts/plugins/<Ad>/ klasörüne
+    kopyalanır ve API açılışta oradan MEF ile yükler. Yalnızca GeoCommand.Sdk'ya bağlıdır.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- Bağımlılıkların çıktıya kopyalanması ve .deps.json'un plugin olarak yüklenebilir biçimde üretilmesi -->
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <Version>1.0.0</Version>
+    <PluginDeployDirectory>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\artifacts\plugins\$(MSBuildProjectName)\'))</PluginDeployDirectory>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Sözleşme API'den paylaşılır: plugin klasörüne kopyalanmaz. -->
+    <ProjectReference Include="..\..\src\GeoCommand.Sdk\GeoCommand.Sdk.csproj" Private="false" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="GeoCommand.UnitTests" />
+  </ItemGroup>
+
+  <Target Name="DeployPlugin" AfterTargets="Build">
+    <ItemGroup>
+      <_PluginFiles Include="$(OutDir)**\*" />
+    </ItemGroup>
+    <RemoveDir Directories="$(PluginDeployDirectory)" />
+    <Copy SourceFiles="@(_PluginFiles)" DestinationFiles="@(_PluginFiles->'$(PluginDeployDirectory)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="false" />
+    <Message Importance="high" Text="$(MSBuildProjectName) -> $(PluginDeployDirectory)" />
+  </Target>
+
+</Project>

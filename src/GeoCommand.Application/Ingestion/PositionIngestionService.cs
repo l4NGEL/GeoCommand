@@ -5,6 +5,7 @@ using GeoCommand.Domain.Common;
 using GeoCommand.Domain.Events;
 using GeoCommand.Domain.Vehicles;
 using GeoCommand.Domain.Zones;
+using GeoCommand.Sdk;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 

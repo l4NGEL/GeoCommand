@@ -30,9 +30,30 @@
 
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Foreground="#9FB0C2" VerticalAlignment="Center" Margin="0,0,6,0"
-                               Text="{Binding SourceStatus.SourceType, StringFormat=Kaynak: {0}, FallbackValue=Kaynak: —}" />
-                    <ComboBox Width="170" Margin="0,0,6,0" ItemsSource="{Binding SourceStatus.AvailableScenarios}"
-                              SelectedItem="{Binding SelectedScenario}" ToolTip="Senaryo / kayıt dosyası" />
+                               Text="{Binding SourceStatusText}" ToolTip="{Binding SourceStatus.LastError}" />
+                    <ComboBox Width="110" Margin="0,0,6,0" ItemsSource="{Binding SourceTypes}" SelectedItem="{Binding SelectedSourceType}"
+                              AutomationProperties.Name="Kaynak tipi" TextSearch.TextPath="Name">
+                        <ComboBox.ItemContainerStyle>
+                            <Style TargetType="ComboBoxItem">
+                                <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+                            </Style>
+                        </ComboBox.ItemContainerStyle>
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Name}">
+                                    <TextBlock.ToolTip>
+                                        <TextBlock>
+                                            <Run Text="{Binding Description, Mode=OneWay}" /><LineBreak />
+                                            <Run Text="{Binding Origin, Mode=OneWay}" /> <Run Text="{Binding Version, Mode=OneWay}" />
+                                        </TextBlock>
+                                    </TextBlock.ToolTip>
+                                </TextBlock>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <ComboBox Width="170" Margin="0,0,6,0" ItemsSource="{Binding SelectedSourceType.AvailableScenarios}"
+                              SelectedItem="{Binding SelectedScenario}" ToolTip="Senaryo / kayıt dosyası / alıcı grubu"
+                              AutomationProperties.Name="Senaryo" />
                     <Button Content="▶ Başlat" Command="{Binding StartSourceCommand}" />
                     <Button Content="■ Durdur" Command="{Binding StopSourceCommand}" />
                     <Border Margin="10,0,0,0" Padding="10,3" CornerRadius="10" VerticalAlignment="Center">

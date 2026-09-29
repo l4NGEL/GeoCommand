@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\GeoCommand.Domain\GeoCommand.Domain.csproj" />
     <ProjectReference Include="..\GeoCommand.Contracts\GeoCommand.Contracts.csproj" />
+    <ProjectReference Include="..\GeoCommand.Sdk\GeoCommand.Sdk.csproj" />
   </ItemGroup>
 
   <ItemGroup>

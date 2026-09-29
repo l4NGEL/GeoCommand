@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\GeoCommand.Api\GeoCommand.Api.csproj" />
+    <ProjectReference Include="..\..\plugins\GeoCommand.Plugins.Nmea\GeoCommand.Plugins.Nmea.csproj" />
   </ItemGroup>
 
 </Project>

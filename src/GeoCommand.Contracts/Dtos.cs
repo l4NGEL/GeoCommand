@@ -1,4 +1,4 @@
-namespace GeoCommand.Contracts;
+﻿namespace GeoCommand.Contracts;
 
 public sealed record GeoPointDto(double Latitude, double Longitude);
 
@@ -58,3 +58,12 @@ public sealed record SourceStatusDto(
     string? ActiveScenario,
     IReadOnlyList<string> AvailableScenarios,
     string? LastError);
+
+/// <summary>Seçilebilir bir veri kaynağı. <see cref="Origin"/>: "BuiltIn" veya "Plugin".</summary>
+public sealed record SourceTypeDto(
+    string Name,
+    string Description,
+    string Origin,
+    string? Version,
+    IReadOnlyList<string> AvailableScenarios,
+    string DefaultScenario);

@@ -22,6 +22,8 @@
     <ProjectReference Include="..\..\src\GeoCommand.Domain\GeoCommand.Domain.csproj" />
     <ProjectReference Include="..\..\src\GeoCommand.Application\GeoCommand.Application.csproj" />
     <ProjectReference Include="..\..\src\GeoCommand.Infrastructure\GeoCommand.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\plugins\GeoCommand.Plugins.Nmea\GeoCommand.Plugins.Nmea.csproj" />
+    <ProjectReference Include="..\..\src\GeoCommand.Sdk\GeoCommand.Sdk.csproj" />
   </ItemGroup>
 
 </Project>

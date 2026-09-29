@@ -1,5 +1,5 @@
 using System.Runtime.CompilerServices;
-using GeoCommand.Application.Ingestion;
+using GeoCommand.Sdk;
 using GeoCommand.Infrastructure.DataSources.Simulation;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

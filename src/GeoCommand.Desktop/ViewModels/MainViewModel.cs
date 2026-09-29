@@ -51,6 +51,21 @@ public sealed partial class MainViewModel : ObservableObject
 
     [ObservableProperty] private string? _selectedScenario;
 
+    public string SourceStatusText => SourceStatus switch
+    {
+        null => "Kaynak: —",
+        { IsRunning: true } s => $"Çalışıyor: {s.SourceType} / {s.ActiveScenario}",
+        { LastError: not null } s => $"{s.SourceType} hata ile durdu",
+        var s => $"{s.SourceType} durdu"
+    };
+
+    partial void OnSourceStatusChanged(SourceStatusDto? value) => OnPropertyChanged(nameof(SourceStatusText));
+
+    /// <summary>Yerleşik kaynaklar ve API'nin yüklediği plugin'ler.</summary>
+    public ObservableCollection<SourceTypeDto> SourceTypes { get; } = [];
+
+    [ObservableProperty] private SourceTypeDto? _selectedSourceType;
+
     public bool IsLinkDown => LinkState != LinkState.Connected;
 
     partial void OnLinkStateChanged(LinkState value) => OnPropertyChanged(nameof(IsLinkDown));
@@ -84,13 +99,14 @@ public sealed partial class MainViewModel : ObservableObject
             var events = _api.GetEventsAsync(limit: 200);
             var zones = _api.GetZonesAsync();
             var source = _api.GetSourceStatusAsync();
-            await Task.WhenAll(vehicles, events, zones, source);
+            var sourceTypes = _api.GetSourceTypesAsync();
+            await Task.WhenAll(vehicles, events, zones, source, sourceTypes);
 
             await _dispatcher.InvokeAsync(async () =>
             {
                 var missed = State.ApplySnapshot(vehicles.Result, events.Result, zones.Result);
                 SourceStatus = source.Result;
-                SelectedScenario ??= source.Result.ActiveScenario ?? source.Result.AvailableScenarios.FirstOrDefault();
+                ApplySourceTypes(sourceTypes.Result);
                 LastSyncText = $"Son eşitleme: {DateTime.Now:HH:mm:ss}";
 
                 if (_hasSynchronizedOnce)
@@ -133,7 +149,25 @@ public sealed partial class MainViewModel : ObservableObject
         if (SelectedVehicle is not null) FocusVehicleRequested?.Invoke(SelectedVehicle);
     }
 
-    // ---- Veri kaynağı (simülatör / dosya) ----
+    // ---- Veri kaynağı (yerleşik veya plugin) ----
+
+    private void ApplySourceTypes(IReadOnlyList<SourceTypeDto> types)
+    {
+        // Operatörün seçimi yeniden eşitlemede korunur; ilk seferde API'de seçili kaynak gösterilir.
+        var keep = SelectedSourceType?.Name ?? SourceStatus?.SourceType;
+        SourceTypes.Clear();
+        foreach (var type in types) SourceTypes.Add(type);
+        SelectedSourceType = types.FirstOrDefault(t => string.Equals(t.Name, keep, StringComparison.OrdinalIgnoreCase)) ?? types.FirstOrDefault();
+    }
+
+    partial void OnSelectedSourceTypeChanged(SourceTypeDto? value)
+    {
+        if (value is null || (SelectedScenario is not null && value.AvailableScenarios.Contains(SelectedScenario))) return;
+        var running = SourceStatus is not null && string.Equals(SourceStatus.SourceType, value.Name, StringComparison.OrdinalIgnoreCase);
+        SelectedScenario = (running ? SourceStatus!.ActiveScenario : null)
+                           ?? value.AvailableScenarios.FirstOrDefault(s => s == value.DefaultScenario)
+                           ?? value.AvailableScenarios.FirstOrDefault();
+    }
 
     private bool CanStartSource() => SourceStatus is not null;
     private bool CanStopSource() => SourceStatus?.IsRunning == true;
@@ -141,7 +175,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanStartSource))]
     private Task StartSourceAsync() => RunAsync(async () =>
     {
-        SourceStatus = await _api.StartSourceAsync(SelectedScenario);
+        SourceStatus = await _api.StartSourceAsync(SelectedSourceType?.Name, SelectedScenario);
         InfoMessage = $"{SourceStatus.SourceType} kaynağı başlatıldı: {SourceStatus.ActiveScenario}";
     });
 

@@ -11,6 +11,8 @@ Windows üzerinde çalışan, harita tabanlı bir **görev ve olay takip simüla
 | ![Konum geçmişi](docs/screenshots/02-konum-gecmisi.png) | ![Bölge çizimi](docs/screenshots/03-bolge-cizimi.png) |
 | **Bağlantı koptu** | **Yeniden bağlandı ve eşitlendi** |
 | ![Bağlantı koptu](docs/screenshots/04-baglanti-koptu.png) | ![Yeniden bağlandı](docs/screenshots/05-yeniden-baglandi.png) |
+| **Plugin kaynağı: NMEA 0183 GPS akışı** | |
+| ![Plugin kaynağı](docs/screenshots/06-plugin-kaynagi.png) | |
 
 Ekran görüntüleri çalışan uygulamadan `tools/capture-window.ps1` ile alındı.
 
@@ -25,6 +27,7 @@ Ekran görüntüleri çalışan uygulamadan `tools/capture-window.ps1` ile alın
 - [Demo senaryosu](#demo-senaryosu-yaklaşık-3-dakika)
 - [Yapılandırma](#yapılandırma)
 - [Veri kaynakları ve dosya biçimleri](#veri-kaynakları-ve-dosya-biçimleri)
+- [Plugin mimarisi](#plugin-mimarisi)
 - [REST API ve SignalR](#rest-api-ve-signalr)
 - [Testler](#testler)
 - [Tasarım kararları](#tasarım-kararları)
@@ -41,7 +44,7 @@ Ekran görüntüleri çalışan uygulamadan `tools/capture-window.ps1` ile alın
 | 5 | Haritaya tıklayarak çokgen bölge çizme; giriş/çıkışta olay. Hesaplar WGS84 (`geometry(Polygon,4326)`) üzerinde yapılır, ekran pikseliyle değil | `Domain/Zones`, `Desktop/Views/MapView` |
 | 6 | Araca görev atama: açıklama, öncelik, durum, atanma zamanı; durum geçiş kuralları; araç başına tek aktif görev | `Domain/Missions` |
 | 7 | Seçili araç için tarih aralığında konum geçmişi (izi haritada gösterir, mesafe hesaplar) ve olaylar | `Application/Queries` |
-| 8 | Aynı `IPositionSource` arayüzünü uygulayan iki kaynak: **simülatör** ve **CSV kayıt dosyası**; `DataSource:Type` ile seçilir | `Infrastructure/DataSources` |
+| 8 | Aynı `IPositionSource` arayüzünü uygulayan kaynaklar: yerleşik **simülatör** ve **CSV kayıt dosyası** ile `plugins/` klasöründen **MEF** ile yüklenen kaynaklar (örnek: TCP üzerinden **NMEA 0183** GPS akışı). Açılışta `DataSource:Type` ile, çalışırken API'den veya istemciden seçilir | `Sdk`, `Infrastructure/DataSources/Plugins`, `plugins/` |
 | 9 | Bağlantı kopunca uyarı bandı ve durum göstergesi; otomatik yeniden bağlanma; yeniden bağlanınca REST'ten eşitleme; yinelenen olay önleme | `Desktop/Services/LiveConnection`, `Desktop/ViewModels/OperationsState` |
 | 10 | Girdi doğrulama (Türkçe ProblemDetails), yapılandırma doğrulama, Serilog ile yapılandırılmış JSON log, repoda parola yok | `Api/Hosting/ApiExceptionHandler`, `.env.example` |
 
@@ -58,9 +61,11 @@ flowchart LR
         A[GeoCommand.Api<br/>ASP.NET Core · SignalR hub]
         AP[GeoCommand.Application<br/>alma hattı · sorgular · görev/bölge servisleri]
         DO[GeoCommand.Domain<br/>varlıklar · iş kuralları · NTS geometri]
-        I[GeoCommand.Infrastructure<br/>EF Core/Npgsql · simülatör · CSV oynatıcı]
+        I[GeoCommand.Infrastructure<br/>EF Core/Npgsql · simülatör · CSV oynatıcı · plugin kataloğu]
     end
     C[GeoCommand.Contracts<br/>DTO · IOperationsClient]
+    SDK[GeoCommand.Sdk<br/>IPositionSource · PositionSource özniteliği]
+    PL[plugins/*<br/>ör. GeoCommand.Plugins.Nmea]
     DB[(PostgreSQL 17<br/>PostGIS 3.5)]
 
     D -- REST --> A
@@ -72,13 +77,16 @@ flowchart LR
     AP --> C
     I --> AP
     I --> DB
+    AP --> SDK
+    PL --> SDK
+    I -. "MEF ile çalışma anında yükler" .-> PL
 ```
 
-**Bağımlılık yönü:** `Domain` hiçbir projeye bağımlı değildir (yalnızca NetTopologySuite geometri kütüphanesi). `Application`, `Domain` ve `Contracts`'a bağımlıdır; veritabanına kendi tanımladığı `IGeoCommandDbContext` üzerinden erişir. `Infrastructure` bu arayüzü EF Core ile uygular. `Desktop` sunucu projelerinin hiçbirini görmez, yalnızca `Contracts`'ı kullanır.
+**Bağımlılık yönü:** `Domain` hiçbir projeye bağımlı değildir (yalnızca NetTopologySuite geometri kütüphanesi). `Application`, `Domain` ve `Contracts`'a bağımlıdır; veritabanına kendi tanımladığı `IGeoCommandDbContext` üzerinden erişir. `Infrastructure` bu arayüzü EF Core ile uygular. `Desktop` sunucu projelerinin hiçbirini görmez, yalnızca `Contracts`'ı kullanır. Plugin'ler yalnızca küçük `Sdk` projesine bağlıdır; API'nin iç türlerini görmez, API de plugin projelerine derleme zamanında başvurmaz.
 
 Soyutlamalar yalnızca gerçek bir ihtiyaç olduğunda eklendi:
 - `IGeoCommandDbContext`: Application'ın Infrastructure'a bağımlı olmaması için.
-- `IPositionSource`: iki gerçek uygulaması var (simülatör, dosya).
+- `IPositionSource`: üç gerçek uygulaması var (simülatör, dosya, NMEA plugin'i).
 - `IOperationsClient`: SignalR hub'ının tipli arayüzü. Application yayınları bunun üzerinden yapar, Api bunu `IHubContext` ile bağlar. Böylece ayrı bir "notifier" katmanı gerekmez.
 
 Repository katmanı bilerek eklenmedi; EF Core `DbSet` zaten bu görevi görüyor.
@@ -87,7 +95,7 @@ Repository katmanı bilerek eklenmedi; EF Core `DbSet` zaten bu görevi görüyo
 
 ```mermaid
 sequenceDiagram
-    participant S as Simülatör / CSV / HTTP
+    participant S as Simülatör / CSV / plugin / HTTP
     participant P as PositionIngestionService
     participant DB as PostGIS
     participant H as SignalR hub
@@ -147,6 +155,7 @@ Alternatif olarak `ConnectionStrings__GeoCommand` ortam değişkeni de kullanıl
 ### 3. API
 
 ```powershell
+dotnet build GeoCommand.slnx               # plugin'leri de derler ve artifacts/plugins/ altına koyar
 dotnet run --project src/GeoCommand.Api
 ```
 
@@ -176,7 +185,8 @@ docker compose down -v     # veritabanı birimini de siler
 4. **Geçmiş sorgusu.** *Geçmiş* sekmesinde **Son 5 dk**'ya basın. İz haritada mor çizgiyle, özet satırında konum sayısı, katedilen mesafe ve olaylar görünür.
 5. **Bağlantı kopması.** API'nin terminalinde `Ctrl+C` ile API'yi durdurun. İstemcide kırmızı bant ve **Yeniden bağlanıyor** göstergesi çıkar. API'yi tekrar başlatın. İstemci kendiliğinden bağlanır, durumu REST'ten çeker ve mavi bantta "bağlantı kopukken N yeni olay" bilgisini gösterir. Olaylar tekrarlanmaz.
 6. **Kaynak değiştirme.** Üst çubuktan `kizilay-gecis` senaryosunu seçip **Başlat**'a basın. DELTA-4 bu senaryoda olmadığı için 15 sn sonra "Çevrimdışı" olayı üretilir. **Durdur** ile tüm araçların çevrimdışına düştüğünü gösterin.
-7. *(İsteğe bağlı)* Dosya kaynağı: `$env:DataSource__Type="File"; dotnet run --project src/GeoCommand.Api` ile API, simülatör yerine `data/replay/ankara-kayit.csv` kaydını oynatır.
+7. **Plugin kaynağı.** Ayrı bir terminalde `python tools/nmea_emitter.py --corrupt 0.05` çalıştırın. Bu betik GPS alıcısı yerine geçer: her araç için bir TCP portundan (10110-10112) `$GPRMC` cümleleri yayınlar ve cümlelerin %5'inin sağlama toplamını bilerek bozar. İstemcide kaynak tipini **Nmea** yapıp **Başlat**'a basın. Araçlar kayıttaki rotalarda hareket etmeye başlar. Bozuk cümleler API logunda `Geçersiz NMEA cümlesi` uyarısıyla elenir. Yerleşik kaynaklara aynı açılır listeden geri dönülür.
+8. *(İsteğe bağlı)* Açılış kaynağını değiştirme: `$env:DataSource__Type="File"; dotnet run --project src/GeoCommand.Api` ile API, simülatör yerine `data/replay/ankara-kayit.csv` kaydını oynatır.
 
 ## Yapılandırma
 
@@ -186,21 +196,24 @@ docker compose down -v     # veritabanı birimini de siler
 |---|---|---|
 | `ConnectionStrings:GeoCommand` | *(yok)* | user-secrets veya ortam değişkeni ile verilir |
 | `Database:MigrateOnStartup` | `true` | Açılışta migration uygula |
-| `DataSource:Type` | `Simulator` | `Simulator` veya `File` |
+| `DataSource:Type` | `Simulator` | Açılışta seçili kaynak: `Simulator`, `File` veya yüklü bir plugin'in adı (`Nmea`) |
 | `DataSource:AutoStart` | `true` | Kaynağı API açılışında başlat |
 | `DataSource:Simulator:ScenarioDirectory` / `DefaultScenario` | `data/scenarios` / `ankara-devriye` | |
 | `DataSource:File:Directory` / `DefaultFile` | `data/replay` / `ankara-kayit.csv` | |
 | `DataSource:File:PlaybackSpeed` | `1.0` | 2 = iki kat hızlı |
 | `DataSource:File:Loop` | `true` | Dosya bitince baştan oynat |
+| `DataSource:Plugins:Directory` | `plugins` (Development: `../../artifacts/plugins`) | Plugin klasörü; göreli yol içerik köküne göre çözülür. Boş bırakılırsa plugin yüklenmez |
+| `DataSource:Nmea:Scenarios:<ad>` | `yerel-alici` (3 akış, 127.0.0.1:10110-10112) | Her senaryo bir akış listesidir: `{ "Callsign", "Host", "Port" }` |
+| `DataSource:Nmea:DefaultScenario` / `ReconnectSeconds` | `yerel-alici` / `5` | Bağlantı düşerse yeniden deneme aralığı |
 | `Liveness:OfflineAfterSeconds` | `15` | Bu süre bildirim yoksa araç çevrimdışı |
 | `Liveness:CheckIntervalSeconds` | `5` | Kontrol aralığı |
 | `Serilog:*` | konsol + `logs/geocommand-api-*.json` | |
 
-Geçersiz yapılandırma (ör. `DataSource:Type=Foo`) API açılışında anlamlı bir mesajla yakalanır (`ValidateOnStart`).
+Geçersiz yapılandırma (ör. `DataSource:Type=Foo`) API açılışında anlamlı bir mesajla yakalanır (`ValidateOnStart`). Mesajda mevcut kaynaklar ve varsa plugin yükleme hataları listelenir.
 
 ## Veri kaynakları ve dosya biçimleri
 
-Her iki kaynak da `IPositionSource` arayüzünü uygular ve bildirimlerini HTTP ile gelenlerle **aynı** doğrulama ve olay hattından geçirir. Senaryo veya dosya adı yalnızca ilgili klasördeki listeden seçilebilir; istemci keyfi bir dosya yolu gönderemez.
+Tüm kaynaklar `IPositionSource` arayüzünü uygular ve bildirimlerini HTTP ile gelenlerle **aynı** doğrulama ve olay hattından geçirir. Senaryo, dosya veya alıcı grubu yalnızca kaynağın kendi listesinden seçilebilir; istemci keyfi bir dosya yolu ya da adres gönderemez.
 
 ### Simülatör senaryosu: `data/scenarios/*.json`
 
@@ -235,6 +248,62 @@ offset_seconds,callsign,latitude,longitude,speed_mps,heading_deg
 
 `offset_seconds`, oynatma başlangıcına göre saniyedir ve azalmamalıdır. Zaman damgaları oynatma anına göre yeniden hesaplanır. Hatalı satırlar satır numarasıyla raporlanır ve dosya reddedilir. Örnek dosya (`ankara-kayit.csv`, 3 araç, 5 dakika) `tools/generate_replay.py` ile sabit seed'le üretildi.
 
+### NMEA 0183 akışı (plugin): `$xxRMC`
+
+```text
+$GPRMC,123519.50,A,3955.2480,N,03251.2460,E,24.3,152.9,280926,,,A*6A
+       saat UTC  │ enlem ddmm.mmmm   boylam dddmm.mmmm  hız  rota tarih     sağlama toplamı
+                 durum: A = geçerli konum, V = konum yok
+```
+
+- Her alıcı (TCP bağlantısı) tek bir araca aittir; çağrı adı yapılandırmadan gelir. Bir senaryonun akışları paralel okunur ve bir akışın kopması diğerlerini etkilemez.
+- Sağlama toplamı zorunludur. Hatalı veya eksik sağlama toplamı, geçersiz alan (ör. 60'tan büyük dakika, 30 Şubat) ve 120 karakteri aşan satır reddedilir. Bağlantı başına ilk hata uyarı, sonrakiler ayrıntı (debug) düzeyinde loglanır. `V` (konum yok) cümleleri ve RMC dışı cümleler (GGA, GSV…) sessizce atlanır.
+- Hız knot'tan m/s'ye çevrilir. Duran alıcı rota alanını boş gönderebilir; bu durumda son bilinen rota korunur.
+- Zaman damgası alıcının UTC saatidir. Kesirli saniye `decimal` ile ayrıştırılır: `double` ile `05.06` saniye `05.0599999` oluyordu (bu hata gidiş-dönüş testiyle yakalandı).
+- Satır okuyucu (`NmeaLineReader`) satır uzunluğunu sınırlar. Sonu gelmeyen bir akış belleği şişiremez; yarım kalan son cümle işlenmez.
+
+## Plugin mimarisi
+
+```mermaid
+flowchart LR
+    subgraph API süreci
+        CAT[PositionSourceCatalog]
+        RUN[PositionSourceRunner]
+        SDK[GeoCommand.Sdk<br/>varsayılan yükleme bağlamı]
+    end
+    subgraph "plugins/GeoCommand.Plugins.Nmea/ (ayrı AssemblyLoadContext)"
+        N["NmeaPositionSource<br/>[PositionSource(#quot;Nmea#quot;)]"]
+    end
+    CAT -- "1. klasörü tara, DLL'i yükle" --> N
+    CAT -- "2. MEF: Lazy + meta veri" --> N
+    N -. "IPositionSource, IPositionSourceHost" .-> SDK
+    RUN -- "3. seçilen kaynağı çalıştır" --> CAT
+```
+
+- **Keşif (MEF / `System.Composition`):** Plugin sınıfı `[PositionSource("Ad", Description = "...")]` ile işaretlenir. Bu öznitelik hem `IPositionSource` dışa aktarımı hem de meta veridir. Katalog dışa aktarımları `Lazy<IPositionSource, PositionSourceMetadata>` olarak alır, bu sayede kaynak listesi ve açıklamalar plugin sınıfı **örneklenmeden** okunur. Yalnızca seçilen kaynak oluşturulur.
+- **Bağımlılık enjeksiyonu:** Plugin, API'nin DI kapsayıcısını görmez. Kurucusunda `[ImportingConstructor]` ile yalnızca `IPositionSourceHost` alır. Bu arayüz üç şey verir: kendi yapılandırma bölümü (`DataSource:<Ad>`), logger fabrikası ve saat (`TimeProvider`, testlerde sahte saat için).
+- **Yalıtım:** Her plugin ayrı bir `AssemblyLoadContext`'e yüklenir ve kendi bağımlılıklarını `.deps.json` üzerinden kendi klasöründen çözer. Böylece API ile farklı sürüm bir paket kullanabilir. Sözleşme derlemeleri (`GeoCommand.Sdk`, `System.Composition.*`, `Microsoft.Extensions.*`) ise bilinçli olarak API'den paylaşılır. Paylaşılmasalardı plugin'deki `IPositionSource` API'dekiyle aynı tür sayılmaz ve MEF hiçbir dışa aktarımı eşleştiremezdi. Bu durum birim testiyle doğrulanır: test projesi plugin'e doğrudan da başvurur, yine de katalogdaki tür ayrı bağlamdan gelir ve farklı bir `Type` nesnesidir.
+- **Hata dayanıklılığı:** Bozuk DLL, eksik dosya veya aynı adlı ikinci kaynak yalnızca o plugin'in atlanmasına yol açar. API açılır, hata loglanır ve katalogda görünür. Ad çakışmasında yerleşik kaynak kazanır.
+- **Dağıtım düzeni:** `plugins/<Ad>/<Ad>.dll` (+ `.deps.json`, varsa plugin'in kendi bağımlılıkları). Plugin projesi `EnableDynamicLoading` ile derlenir, `GeoCommand.Sdk`'ya `Private="false"` ile başvurur (sözleşme kopyalanmaz) ve derlemeden sonra çıktısını `artifacts/plugins/<Ad>/` klasörüne kopyalar.
+
+**Yeni bir kaynak eklemek:**
+
+```csharp
+[PositionSource("Ornek", Description = "Örnek kaynak")]
+public sealed class OrnekSource : IPositionSource
+{
+    [ImportingConstructor]
+    public OrnekSource(IPositionSourceHost host) { /* host.GetSettings("Ornek")["..."] */ }
+
+    public string SourceType => "Ornek";
+    public IReadOnlyList<string> AvailableScenarios => ["varsayilan"];
+    public string DefaultScenario => "varsayilan";
+    public async IAsyncEnumerable<PositionReport> ReadAsync(string scenario, [EnumeratorCancellation] CancellationToken ct) { ... }
+}
+```
+
+Projeyi derleyip çıktısını plugin klasörüne koymak yeterlidir. API, istemci veya veritabanı tarafında değişiklik gerekmez. Kaynak `/api/source/types` listesinde ve istemcinin açılır listesinde görünür.
+
 ## REST API ve SignalR
 
 | Yöntem | Yol | Açıklama |
@@ -250,7 +319,8 @@ offset_seconds,callsign,latitude,longitude,speed_mps,heading_deg
 | DELETE | `/api/zones/{id}` | Bölgeyi sil (geçmiş olaylar korunur) |
 | GET | `/api/zones/{id}/vehicles` | Son konumu bölgede olan araçlar (PostGIS `ST_Covers`) |
 | POST | `/api/positions` | Harici konum bildirimi → 202 / 400 / 404 / 409 (`Duplicate`) |
-| GET | `/api/source` · POST `/api/source/start` · POST `/api/source/stop` | Veri kaynağı durumu / başlat `{ "scenario" }` / durdur |
+| GET | `/api/source` · POST `/api/source/start` · POST `/api/source/stop` | Veri kaynağı durumu / başlat `{ "sourceType"?, "scenario"? }` (kaynak tipi verilirse çalışan kaynak durdurulup ona geçilir) / durdur |
+| GET | `/api/source/types` | Seçilebilir kaynaklar: ad, açıklama, `BuiltIn`/`Plugin`, plugin sürümü, senaryolar |
 | GET | `/health` | Veritabanı dahil sağlık kontrolü |
 
 Hatalar `application/problem+json` biçiminde ve Türkçe döner:
@@ -271,8 +341,8 @@ dotnet test GeoCommand.slnx     # Docker Desktop çalışıyor olmalı (entegras
 
 | Proje | Sayı | Kapsam |
 |---|---|---|
-| `GeoCommand.UnitTests` | 62 | Bölge giriş/çıkış (sınır, içbükey çokgen, ~50 m dışarıdaki nokta, çakışan bölgeler), çokgen doğrulama (kendini kesen, 180. meridyen), konum doğrulama, yinelenen bildirim, çevrimdışı/çevrimiçi, görev durum geçişleri, simülatör determinizmi, CSV ayrıştırma (tr-TR kültüründe bile), depodaki örnek dosyaların geçerliliği |
-| `GeoCommand.IntegrationTests` | 6 | Gerçek PostGIS + API + SignalR: bölgeyi kesen araç için tam olarak bir giriş ve bir çıkış olayı (REST ve SignalR), tekrar gönderilen bildirimin 409 alıp olay üretmemesi, görev atama ile tarih aralıklı geçmiş sorgusu uçtan uca, Türkçe ProblemDetails, dosya kaynağının yapılandırmayla seçilmesi, dizin geçişi girişiminin reddi |
+| `GeoCommand.UnitTests` | 100 | Bölge giriş/çıkış (sınır, içbükey çokgen, ~50 m dışarıdaki nokta, çakışan bölgeler), çokgen doğrulama (kendini kesen, 180. meridyen), konum doğrulama, yinelenen bildirim, çevrimdışı/çevrimiçi, görev durum geçişleri, simülatör determinizmi, CSV ayrıştırma (tr-TR kültüründe bile), depodaki örnek dosyaların geçerliliği. **Plugin:** gerçek plugin DLL'inin MEF ile keşfi ve meta verisi, ayrı yükleme bağlamı ile paylaşılan sözleşme, bozuk/eksik plugin'in atlanması, ad çakışması, yüklenen plugin'in TCP üzerinden okuması, göreli plugin klasörü ve bilinmeyen `DataSource:Type` doğrulaması. **NMEA:** RMC ayrıştırma (yarıküreler, konum yok, sağlama toplamı, 10 ayrı geçersiz alan), bağımsız Python yayıncısıyla birebir aynı çıktı, gidiş-dönüş, bayt bayt gelen ve aşırı uzun satırlar, yapılandırma hataları |
+| `GeoCommand.IntegrationTests` | 9 | Gerçek PostGIS + API + SignalR: bölgeyi kesen araç için tam olarak bir giriş ve bir çıkış olayı (REST ve SignalR), tekrar gönderilen bildirimin 409 alıp olay üretmemesi, görev atama ile tarih aralıklı geçmiş sorgusu uçtan uca, Türkçe ProblemDetails, dosya kaynağının yapılandırmayla seçilmesi, dizin geçişi girişiminin reddi. **Plugin:** API'nin gerçek plugin klasöründen yerleşik ve plugin kaynaklarını listelemesi, çalışma anında NMEA kaynağına geçilip sahte GPS alıcısından gelen konumların PostGIS'e yazılması, bilinmeyen kaynak tipinin 400 alması |
 | `GeoCommand.Desktop.Tests` (Windows) | 18 | İstemci eşitleme kuralları: yeniden bağlanırken gelen daha yeni canlı güncellemenin korunması, olayların kimliğe göre tekilleştirilmesi, kopukken silinen bölgelerin kaldırılması, ProblemDetails'in mesaja çevrilmesi, tarih girişi biçimi |
 
 ## Tasarım kararları
@@ -298,6 +368,9 @@ dotnet test GeoCommand.slnx     # Docker Desktop çalışıyor olmalı (entegras
 - **Harita altlığı:** OpenStreetMap karoları internet gerektirir ve yalnızca düşük hacimli tanıtım kullanımına uygundur. Çevrimdışı modda arka plan boş kalır, araçlar, bölgeler ve iz çizilmeye devam eder.
 - **Geçmiş sorgusu** tek seferde en fazla 20.000 nokta döner (`truncated` bayrağıyla bildirilir). Uzun aralıklar için sunucu tarafında seyreltme eklenmedi.
 - **Konum geçmişi saklama süresi yoktur.** Tablo sürekli büyür; gerçek kullanımda bölümleme veya arşivleme gerekir.
+- **Plugin'ler güvenilir koddur.** Aynı süreçte, API ile aynı yetkilerle çalışırlar. `AssemblyLoadContext` bağımlılık yalıtımı sağlar, güvenlik yalıtımı sağlamaz; plugin klasörüne yazma yetkisi yalnızca yöneticide olmalıdır. Plugin'ler çalışırken kaldırılamaz veya yeniden yüklenemez: yeni bir plugin için API yeniden başlatılır.
+- **Paylaşılan sözleşme sürümü:** Plugin'ler `Microsoft.Extensions.*` ve `System.Composition` derlemelerini API'den alır. API'dekinden daha yeni bir sürüm isteyen bir plugin yüklenemez.
+- **NMEA kaynağı** yalnızca RMC cümlesini kullanır: yükseklik (GGA) ve doğruluk bilgisi (HDOP) okunmaz. Seri port (RS-232) desteği henüz yok, yalnızca TCP var.
 - **WPF istemci otomatik UI testiyle kapsanmıyor.** İstemcinin durum mantığı birim testli; ekran akışları elle ve UI Automation betiğiyle doğrulandı (ekran görüntüleri).
 
 ## Proje yapısı
@@ -308,15 +381,18 @@ GeoCommand/
 │  ├─ GeoCommand.Domain/          varlıklar, iş kuralları, bölge değerlendirici
 │  ├─ GeoCommand.Contracts/       DTO'lar, SignalR istemci arayüzü (sunucu + istemci ortak)
 │  ├─ GeoCommand.Application/     konum alma hattı, sorgular, görev/bölge/çevrimdışı servisleri
-│  ├─ GeoCommand.Infrastructure/  EF Core + PostGIS, migration, simülatör, CSV oynatıcı
+│  ├─ GeoCommand.Sdk/             plugin sözleşmesi: IPositionSource, [PositionSource], IPositionSourceHost
+│  ├─ GeoCommand.Infrastructure/  EF Core + PostGIS, migration, simülatör, CSV oynatıcı, plugin kataloğu (MEF)
 │  ├─ GeoCommand.Api/             Minimal API, SignalR hub, arka plan hizmetleri, hata yönetimi
 │  └─ GeoCommand.Desktop/         WPF/MVVM istemci, Mapsui harita
+├─ plugins/
+│  └─ GeoCommand.Plugins.Nmea/    NMEA 0183 GPS kaynağı (TCP) → derleme çıktısı artifacts/plugins/
 ├─ tests/
 │  ├─ GeoCommand.UnitTests/
 │  ├─ GeoCommand.IntegrationTests/   (Testcontainers PostGIS)
 │  └─ GeoCommand.Desktop.Tests/      (Windows)
 ├─ data/scenarios/*.json · data/replay/*.csv
-├─ tools/  generate_replay.py · capture-window.ps1
+├─ tools/  generate_replay.py · nmea_emitter.py · capture-window.ps1
 ├─ docker-compose.yml · .env.example · global.json
 ```
 

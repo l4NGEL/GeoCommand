@@ -1,5 +1,6 @@
 using GeoCommand.Api.Hosting;
 using GeoCommand.Application.Ingestion;
+using GeoCommand.Sdk;
 using GeoCommand.Application.Missions;
 using GeoCommand.Application.Queries;
 using GeoCommand.Application.Zones;
@@ -58,8 +59,9 @@ public static class GeoCommandEndpoints
 
         var source = api.MapGroup("/source").WithTags("Veri kaynağı");
         source.MapGet("/", (PositionSourceRunner r) => r.Status);
+        source.MapGet("/types", (PositionSourceRunner r) => r.SourceTypes);
         source.MapPost("/start", (StartSourceRequest? request, PositionSourceRunner r, CancellationToken ct) =>
-            r.StartSourceAsync(request?.Scenario, ct));
+            r.StartSourceAsync(request?.SourceType, request?.Scenario, ct));
         source.MapPost("/stop", (PositionSourceRunner r, CancellationToken ct) => r.StopSourceAsync(ct));
 
         return app;

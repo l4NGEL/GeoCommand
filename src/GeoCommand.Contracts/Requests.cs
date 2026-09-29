@@ -1,4 +1,4 @@
-namespace GeoCommand.Contracts;
+﻿namespace GeoCommand.Contracts;
 
 /// <summary>Harici bir kaynağın HTTP üzerinden gönderdiği konum bildirimi.</summary>
 public sealed record PositionReportRequest(
@@ -15,4 +15,5 @@ public sealed record AssignMissionRequest(string Description, MissionPriority Pr
 
 public sealed record ChangeMissionStatusRequest(MissionState Status);
 
-public sealed record StartSourceRequest(string? Scenario);
+/// <param name="SourceType">Boş: çalışan/son seçilen kaynak. Dolu: o kaynağa geçilir (çalışan kaynak önce durdurulur).</param>
+public sealed record StartSourceRequest(string? Scenario, string? SourceType = null);

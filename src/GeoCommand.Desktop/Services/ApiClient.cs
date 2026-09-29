@@ -55,8 +55,10 @@ public sealed class ApiClient(HttpClient http)
 
     public Task<SourceStatusDto> GetSourceStatusAsync(CancellationToken ct = default) => GetAsync<SourceStatusDto>("api/source", ct);
 
-    public Task<SourceStatusDto> StartSourceAsync(string? scenario, CancellationToken ct = default) =>
-        SendAsync<SourceStatusDto>(HttpMethod.Post, "api/source/start", new StartSourceRequest(scenario), ct);
+    public Task<List<SourceTypeDto>> GetSourceTypesAsync(CancellationToken ct = default) => GetAsync<List<SourceTypeDto>>("api/source/types", ct);
+
+    public Task<SourceStatusDto> StartSourceAsync(string? sourceType, string? scenario, CancellationToken ct = default) =>
+        SendAsync<SourceStatusDto>(HttpMethod.Post, "api/source/start", new StartSourceRequest(scenario, sourceType), ct);
 
     public Task<SourceStatusDto> StopSourceAsync(CancellationToken ct = default) =>
         SendAsync<SourceStatusDto>(HttpMethod.Post, "api/source/stop", null, ct);

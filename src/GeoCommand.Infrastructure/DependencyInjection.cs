@@ -1,10 +1,13 @@
 using GeoCommand.Application.Abstractions;
-using GeoCommand.Application.Ingestion;
 using GeoCommand.Infrastructure.DataSources;
+using GeoCommand.Infrastructure.DataSources.Plugins;
 using GeoCommand.Infrastructure.Persistence;
+using GeoCommand.Sdk;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace GeoCommand.Infrastructure;
@@ -27,22 +30,37 @@ public static class DependencyInjection
         });
         services.AddScoped<IGeoCommandDbContext>(sp => sp.GetRequiredService<GeoCommandDbContext>());
 
-        services.AddOptions<DataSourceOptions>()
-            .Bind(configuration.GetSection(DataSourceOptions.Section))
-            .Validate(o => o.Type is SimulatedPositionSource.TypeName or FilePositionSource.TypeName,
-                $"DataSource:Type '{SimulatedPositionSource.TypeName}' veya '{FilePositionSource.TypeName}' olmalı.")
-            .ValidateOnStart();
+        services.AddOptions<PluginOptions>().Bind(configuration.GetSection(PluginOptions.Section));
 
-        // İki kaynak da aynı IPositionSource arayüzünü uygular; hangisinin kullanılacağına yapılandırma karar verir.
+        // Tüm kaynaklar aynı IPositionSource arayüzünü uygular. Yerleşik ikisi DI'dan, diğerleri plugin klasöründen
+        // MEF ile gelir; hangisinin çalışacağına yapılandırma (açılışta) veya operatör (API'den) karar verir.
         services.AddSingleton<SimulatedPositionSource>();
         services.AddSingleton<FilePositionSource>();
-        services.AddSingleton<IPositionSource>(sp =>
+        services.AddSingleton<IPositionSourceHost, PositionSourceHost>();
+        services.AddSingleton(sp =>
         {
-            var type = sp.GetRequiredService<IOptions<DataSourceOptions>>().Value.Type;
-            return string.Equals(type, FilePositionSource.TypeName, StringComparison.OrdinalIgnoreCase)
-                ? sp.GetRequiredService<FilePositionSource>()
-                : sp.GetRequiredService<SimulatedPositionSource>();
+            var directory = sp.GetRequiredService<IOptions<PluginOptions>>().Value.Directory;
+            if (!string.IsNullOrWhiteSpace(directory) && !Path.IsPathRooted(directory))
+                directory = Path.GetFullPath(Path.Combine(sp.GetRequiredService<IHostEnvironment>().ContentRootPath, directory));
+
+            PositionSourceEntry BuiltIn<T>(string name, string description) where T : IPositionSource =>
+                new(name, description, PositionSourceOrigin.BuiltIn, null, null, () => sp.GetRequiredService<T>());
+
+            return PositionSourceCatalog.Create(
+                [
+                    BuiltIn<SimulatedPositionSource>(SimulatedPositionSource.TypeName, "JSON senaryolarından tekrar üretilebilir simülasyon"),
+                    BuiltIn<FilePositionSource>(FilePositionSource.TypeName, "CSV kayıt dosyası oynatıcısı")
+                ],
+                directory,
+                sp.GetRequiredService<IPositionSourceHost>(),
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger<PositionSourceCatalog>());
         });
+
+        services.AddOptions<DataSourceOptions>()
+            .Bind(configuration.GetSection(DataSourceOptions.Section))
+            .ValidateOnStart();
+        // Seçilen tür katalogda olmalı; plugin'ler ancak çalışma anında bilindiği için doğrulama kataloğa bakar.
+        services.AddSingleton<IValidateOptions<DataSourceOptions>, DataSourceOptionsValidator>();
 
         return services;
     }

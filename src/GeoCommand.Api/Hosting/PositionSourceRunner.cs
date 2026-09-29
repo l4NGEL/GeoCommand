@@ -2,16 +2,19 @@ using GeoCommand.Application.Ingestion;
 using GeoCommand.Contracts;
 using GeoCommand.Domain.Common;
 using GeoCommand.Infrastructure.DataSources;
+using GeoCommand.Infrastructure.DataSources.Plugins;
+using GeoCommand.Sdk;
 using Microsoft.Extensions.Options;
 
 namespace GeoCommand.Api.Hosting;
 
 /// <summary>
-/// Yapılandırmayla seçilen <see cref="IPositionSource"/>'u (simülatör veya dosya) arka planda çalıştırır ve
-/// her bildirimi HTTP ile gelenlerle aynı alma hattından geçirir. Operatör API üzerinden başlatıp durdurabilir.
+/// Seçili <see cref="IPositionSource"/>'u (yerleşik veya plugin) arka planda çalıştırır ve her bildirimi HTTP ile
+/// gelenlerle aynı alma hattından geçirir. Açılıştaki kaynak <c>DataSource:Type</c>'tan gelir; operatör API üzerinden
+/// başka bir kaynağa geçebilir, başlatıp durdurabilir. Aynı anda tek kaynak çalışır.
 /// </summary>
 public sealed class PositionSourceRunner(
-    IPositionSource source,
+    PositionSourceCatalog catalog,
     IServiceScopeFactory scopes,
     IOperationsClient clients,
     IOptions<DataSourceOptions> options,
@@ -22,16 +25,42 @@ public sealed class PositionSourceRunner(
     private Task? _loop;
     private string? _activeScenario;
     private string? _lastError;
+    private PositionSourceEntry? _selected;
 
-    public SourceStatusDto Status => new(
-        source.SourceType, _loop is { IsCompleted: false }, _activeScenario, source.AvailableScenarios, _lastError);
+    private PositionSourceEntry Selected =>
+        _selected ??= catalog.Find(options.Value.Type)
+                      ?? throw new InvalidOperationException($"DataSource:Type '{options.Value.Type}' katalogda yok.");
+
+    public SourceStatusDto Status
+    {
+        get
+        {
+            var source = Selected.Source;
+            return new(source.SourceType, _loop is { IsCompleted: false }, _activeScenario, source.AvailableScenarios, _lastError);
+        }
+    }
+
+    public IReadOnlyList<SourceTypeDto> SourceTypes =>
+        catalog.Entries.Select(e =>
+        {
+            // Bir plugin'in senaryo listesi hata verirse diğer kaynaklar yine listelenebilmeli.
+            try
+            {
+                return new SourceTypeDto(e.Name, e.Description, e.Origin.ToString(), e.Version, e.Source.AvailableScenarios, e.Source.DefaultScenario);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Kaynak bilgisi okunamadı. Kaynak={Source}", e.Name);
+                return new SourceTypeDto(e.Name, $"{e.Description} (hata: {ex.Message})", e.Origin.ToString(), e.Version, [], "");
+            }
+        }).ToList();
 
     async Task IHostedService.StartAsync(CancellationToken cancellationToken)
     {
         if (!options.Value.AutoStart) return;
         try
         {
-            await StartSourceAsync(null, cancellationToken);
+            await StartSourceAsync(null, null, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -43,8 +72,14 @@ public sealed class PositionSourceRunner(
 
     async Task IHostedService.StopAsync(CancellationToken cancellationToken) => await StopSourceAsync(cancellationToken);
 
-    public async Task<SourceStatusDto> StartSourceAsync(string? scenario, CancellationToken cancellationToken)
+    public async Task<SourceStatusDto> StartSourceAsync(string? sourceType, string? scenario, CancellationToken cancellationToken)
     {
+        var entry = string.IsNullOrWhiteSpace(sourceType)
+            ? Selected
+            : catalog.Find(sourceType.Trim()) ?? throw new DomainValidationException([
+                $"'{sourceType.Trim()}' adlı veri kaynağı yok. Mevcut: {string.Join(", ", catalog.Entries.Select(e => e.Name))}."]);
+        var source = entry.Source;
+
         scenario = string.IsNullOrWhiteSpace(scenario) ? source.DefaultScenario : scenario.Trim();
         var match = source.AvailableScenarios.FirstOrDefault(s => string.Equals(s, scenario, StringComparison.OrdinalIgnoreCase))
                     ?? throw new DomainValidationException([
@@ -54,11 +89,12 @@ public sealed class PositionSourceRunner(
         try
         {
             await StopCoreAsync();
+            _selected = entry;
             _cts = new CancellationTokenSource();
             _activeScenario = match;
             _lastError = null;
             var token = _cts.Token;
-            _loop = Task.Run(() => RunAsync(match, token), CancellationToken.None);
+            _loop = Task.Run(() => RunAsync(source, match, token), CancellationToken.None);
         }
         finally
         {
@@ -93,7 +129,7 @@ public sealed class PositionSourceRunner(
         _cts = null;
     }
 
-    private async Task RunAsync(string scenario, CancellationToken cancellationToken)
+    private async Task RunAsync(IPositionSource source, string scenario, CancellationToken cancellationToken)
     {
         long accepted = 0, rejected = 0;
         try

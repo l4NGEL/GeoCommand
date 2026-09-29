@@ -4,7 +4,7 @@ public sealed class DataSourceOptions
 {
     public const string Section = "DataSource";
 
-    /// <summary>"Simulator" veya "File".</summary>
+    /// <summary>Açılışta seçili kaynak: "Simulator", "File" veya yüklenen bir plugin'in adı (ör. "Nmea").</summary>
     public string Type { get; set; } = SimulatedPositionSource.TypeName;
 
     /// <summary>API açılırken kaynağın otomatik başlatılıp başlatılmayacağı.</summary>
@@ -12,6 +12,18 @@ public sealed class DataSourceOptions
 
     public SimulatorOptions Simulator { get; set; } = new();
     public FileSourceOptions File { get; set; } = new();
+}
+
+/// <summary>
+/// <c>DataSource:Plugins</c>. Katalog, kaynak seçimini doğrulayan <see cref="DataSourceOptions"/>'tan önce oluşturulduğu
+/// için ayrı bir seçenek sınıfıdır.
+/// </summary>
+public sealed class PluginOptions
+{
+    public const string Section = DataSourceOptions.Section + ":Plugins";
+
+    /// <summary>Plugin klasörü; göreli yollar uygulamanın içerik köküne (content root) göre çözülür. Boş: plugin yükleme kapalı.</summary>
+    public string? Directory { get; set; } = "plugins";
 }
 
 public sealed class SimulatorOptions
