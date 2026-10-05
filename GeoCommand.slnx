@@ -2,12 +2,16 @@
   <Folder Name="/plugins/">
     <Project Path="plugins/GeoCommand.Plugins.Nmea/GeoCommand.Plugins.Nmea.csproj" />
   </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/GeoCommand.GrpcClient/GeoCommand.GrpcClient.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/GeoCommand.Api/GeoCommand.Api.csproj" />
     <Project Path="src/GeoCommand.Application/GeoCommand.Application.csproj" />
     <Project Path="src/GeoCommand.Contracts/GeoCommand.Contracts.csproj" />
     <Project Path="src/GeoCommand.Desktop/GeoCommand.Desktop.csproj" />
     <Project Path="src/GeoCommand.Domain/GeoCommand.Domain.csproj" />
+    <Project Path="src/GeoCommand.Grpc/GeoCommand.Grpc.csproj" />
     <Project Path="src/GeoCommand.Infrastructure/GeoCommand.Infrastructure.csproj" />
     <Project Path="src/GeoCommand.Sdk/GeoCommand.Sdk.csproj" />
   </Folder>

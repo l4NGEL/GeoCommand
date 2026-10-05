@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    gRPC sözleşmesi: protos/geocommand/v1/geocommand.proto'dan üretilen mesajlar, sunucu taban sınıfları ve istemci
+    sınıfları. API sunucu tarafını, testler ve örnek istemci istemci tarafını kullanır; tür tek yerde üretilir.
+    Taşıma (Grpc.AspNetCore / Grpc.Net.Client) bağımlılığı yoktur.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Protobuf Include="..\..\protos\geocommand\v1\geocommand.proto" ProtoRoot="..\..\protos" GrpcServices="Both" Link="Protos\geocommand.proto" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.36.2" />
+    <PackageReference Include="Grpc.Core.Api" Version="2.84.0" />
+    <PackageReference Include="Grpc.Tools" Version="2.84.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>

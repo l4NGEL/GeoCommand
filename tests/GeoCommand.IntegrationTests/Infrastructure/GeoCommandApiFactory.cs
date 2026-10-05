@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using GeoCommand.Contracts;
+using Grpc.Net.Client;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -69,6 +70,10 @@ public class GeoCommandApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
             })
             .AddJsonProtocol(o => o.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()))
             .Build();
+
+    /// <summary>TestServer üzerinden gRPC kanalı (HTTP/2 bellek içinde taşınır).</summary>
+    public GrpcChannel CreateGrpcChannel() =>
+        GrpcChannel.ForAddress(Server.BaseAddress, new GrpcChannelOptions { HttpHandler = Server.CreateHandler() });
 
     public T GetService<T>() where T : notnull => Services.GetRequiredService<T>();
 }

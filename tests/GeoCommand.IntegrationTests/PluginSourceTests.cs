@@ -50,7 +50,7 @@ public sealed class PluginSourceTests(PluginSourceFactory factory) : IClassFixtu
         Assert.Equal(["Simulator", "File", "Nmea"], types.Select(t => t.Name));
         var nmea = types.Single(t => t.Name == "Nmea");
         Assert.Equal("Plugin", nmea.Origin);
-        Assert.Equal("1.0.0", nmea.Version);
+        Assert.Equal("1.1.0", nmea.Version);
         Assert.Contains("test-alici", nmea.AvailableScenarios); // appsettings.json'daki örnek senaryo da birleşir
         Assert.Equal("test-alici", nmea.DefaultScenario);
         Assert.All(types.Where(t => t.Name != "Nmea"), t => Assert.Equal("BuiltIn", t.Origin));

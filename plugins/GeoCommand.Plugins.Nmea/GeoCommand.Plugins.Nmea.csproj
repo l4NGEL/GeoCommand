@@ -9,13 +9,21 @@
     <TargetFramework>net10.0</TargetFramework>
     <!-- Bağımlılıkların çıktıya kopyalanması ve .deps.json'un plugin olarak yüklenebilir biçimde üretilmesi -->
     <EnableDynamicLoading>true</EnableDynamicLoading>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <PluginDeployDirectory>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\artifacts\plugins\$(MSBuildProjectName)\'))</PluginDeployDirectory>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- Sözleşme API'den paylaşılır: plugin klasörüne kopyalanmaz. -->
     <ProjectReference Include="..\..\src\GeoCommand.Sdk\GeoCommand.Sdk.csproj" Private="false" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Plugin'in kendi bağımlılığı: API bu pakete başvurmaz. Plugin klasörüne kopyalanır ve PluginLoadContext tarafından
+      .deps.json'daki işletim sistemine özgü (runtimes/win, runtimes/unix) derlemeden çözülür.
+    -->
+    <PackageReference Include="System.IO.Ports" Version="10.0.12" />
   </ItemGroup>
 
   <ItemGroup>

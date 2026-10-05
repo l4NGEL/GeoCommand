@@ -7,8 +7,13 @@ Kullanım:
     python tools/nmea_emitter.py                  # ALFA-1:10110, BRAVO-2:10111, CHARLIE-3:10112
     python tools/nmea_emitter.py --speed 5        # kaydı 5 kat hızlı oynat
     python tools/nmea_emitter.py --corrupt 0.05   # cümlelerin %5'inin sağlama toplamını boz (hata yolunu görmek için)
+    python tools/nmea_emitter.py --serial COM11 --callsign ALFA-1 [--baud 4800]
+                                                  # TCP yerine bir aracı seri porttan (RS-232) yayınla
 
-Yalnızca standart kütüphane kullanır. Ctrl+C ile durur.
+Seri port için sanal bir port çifti gerekir (Windows: com0com, ör. COM10<->COM11; Linux:
+socat -d -d pty,raw,echo=0 pty,raw,echo=0). Yayıncı çiftin bir ucuna yazar, API diğer ucunu okur.
+TCP modu yalnızca standart kütüphaneyi kullanır; seri mod pyserial ister (pip install pyserial).
+Ctrl+C ile durur.
 """
 import argparse
 import csv
@@ -63,6 +68,32 @@ def load(path: Path):
     return tracks
 
 
+def emit(send, track, speed: float, corrupt: float, stop: threading.Event) -> bool:
+    """Kaydı bir kez oynatır; durdurulursa False döner. send: tek cümleyi (bayt) yazan işlev."""
+    start = time.monotonic()
+    for offset, lat, lon, spd, hdg in track:
+        delay = start + offset / speed - time.monotonic()
+        if delay > 0 and stop.wait(delay):
+            return False
+        line = rmc(lat, lon, spd, hdg, datetime.now(timezone.utc))
+        if random.random() < corrupt:
+            line = line[:-4] + "00\r\n"
+        send(line.encode("ascii"))
+    return not stop.is_set()
+
+
+def serve_serial(port: str, baud: int, callsign: str, track, speed: float, corrupt: float, stop: threading.Event):
+    try:
+        import serial  # pyserial; yalnızca seri modda gerekir
+    except ImportError:
+        raise SystemExit("Seri mod için pyserial gerekli: pip install pyserial")
+    # serial_for_url: "COM11", "/dev/pts/3" veya test için "loop://" kabul eder.
+    with serial.serial_for_url(port, baudrate=baud, bytesize=8, parity="N", stopbits=1, write_timeout=2) as line:
+        print(f"{callsign}: {port} ({baud} 8N1) üzerinden yayınlanıyor")
+        while emit(line.write, track, speed, corrupt, stop):  # kayıt bitince baştan
+            pass
+
+
 def serve(callsign: str, port: int, track, speed: float, corrupt: float, stop: threading.Event):
     server = socket.create_server(("127.0.0.1", port))
     server.settimeout(0.5)
@@ -74,16 +105,8 @@ def serve(callsign: str, port: int, track, speed: float, corrupt: float, stop: t
             continue
         print(f"{callsign}: {peer[0]}:{peer[1]} bağlandı")
         try:
-            while not stop.is_set():  # kayıt bitince baştan
-                start = time.monotonic()
-                for offset, lat, lon, spd, hdg in track:
-                    delay = start + offset / speed - time.monotonic()
-                    if delay > 0 and stop.wait(delay):
-                        break
-                    line = rmc(lat, lon, spd, hdg, datetime.now(timezone.utc))
-                    if random.random() < corrupt:
-                        line = line[:-4] + "00\r\n"
-                    conn.sendall(line.encode("ascii"))
+            while emit(conn.sendall, track, speed, corrupt, stop):  # kayıt bitince baştan
+                pass
         except (ConnectionError, OSError):
             print(f"{callsign}: istemci ayrıldı")
         finally:
@@ -97,12 +120,25 @@ def main():
     parser.add_argument("--base-port", type=int, default=10110)
     parser.add_argument("--speed", type=float, default=1.0)
     parser.add_argument("--corrupt", type=float, default=0.0)
+    parser.add_argument("--serial", help="TCP yerine bu seri porta yaz (ör. COM11)")
+    parser.add_argument("--callsign", help="seri modda yayınlanacak araç (varsayılan: kayıttaki ilk araç)")
+    parser.add_argument("--baud", type=int, default=4800, help="seri hız; NMEA 0183 standardı 4800")
     args = parser.parse_args()
 
+    tracks = sorted(load(args.file).items())
     stop = threading.Event()
     threads = []
-    for i, (callsign, track) in enumerate(sorted(load(args.file).items())):
-        t = threading.Thread(target=serve, args=(callsign, args.base_port + i, track, args.speed, args.corrupt, stop), daemon=True)
+    if args.serial:
+        callsign = args.callsign or tracks[0][0]
+        track = dict(tracks).get(callsign)
+        if track is None:
+            raise SystemExit(f"'{callsign}' kayıtta yok. Mevcut: {', '.join(c for c, _ in tracks)}")
+        targets = [(serve_serial, (args.serial, args.baud, callsign, track, args.speed, args.corrupt, stop))]
+    else:
+        targets = [(serve, (callsign, args.base_port + i, track, args.speed, args.corrupt, stop))
+                   for i, (callsign, track) in enumerate(tracks)]
+    for target, target_args in targets:
+        t = threading.Thread(target=target, args=target_args, daemon=True)
         t.start()
         threads.append(t)
     try:

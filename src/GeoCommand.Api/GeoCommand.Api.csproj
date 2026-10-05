@@ -9,9 +9,12 @@
     <ProjectReference Include="..\GeoCommand.Application\GeoCommand.Application.csproj" />
     <ProjectReference Include="..\GeoCommand.Infrastructure\GeoCommand.Infrastructure.csproj" />
     <ProjectReference Include="..\GeoCommand.Contracts\GeoCommand.Contracts.csproj" />
+    <ProjectReference Include="..\GeoCommand.Grpc\GeoCommand.Grpc.csproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Grpc.AspNetCore" Version="2.84.0" />
+    <PackageReference Include="Grpc.AspNetCore.Server.Reflection" Version="2.84.0" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Serilog.Formatting.Compact" Version="3.0.0" />

@@ -23,8 +23,13 @@ public sealed class PositionSourceCatalogTests : IDisposable
     {
         var built = Path.Combine(RepoPaths.Root, "artifacts", "plugins", PluginName);
         Assert.True(Directory.Exists(built), $"Plugin derleme çıktısı yok: {built}");
-        var target = Directory.CreateDirectory(Path.Combine(_root.FullName, PluginName));
-        foreach (var file in Directory.GetFiles(built)) File.Copy(file, Path.Combine(target.FullName, Path.GetFileName(file)));
+        // runtimes/ alt klasörleri dahil: System.IO.Ports'un platforma özgü derlemesi oradan çözülür.
+        foreach (var file in Directory.GetFiles(built, "*", SearchOption.AllDirectories))
+        {
+            var target = Path.Combine(_root.FullName, PluginName, Path.GetRelativePath(built, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Copy(file, target);
+        }
     }
 
     public void Dispose()
@@ -51,7 +56,7 @@ public sealed class PositionSourceCatalogTests : IDisposable
         Assert.Equal("Nmea", entry.Name);
         Assert.Equal(PositionSourceOrigin.Plugin, entry.Origin);
         Assert.Contains("NMEA 0183", entry.Description);
-        Assert.Equal("1.0.0", entry.Version);
+        Assert.Equal("1.1.0", entry.Version);
         Assert.Equal(Path.Combine(_root.FullName, PluginName, PluginName + ".dll"), entry.Location);
         Assert.Empty(catalog.LoadErrors);
     }
@@ -156,5 +161,30 @@ public sealed class PositionSourceCatalogTests : IDisposable
         Assert.Equal(at.AddSeconds(2), reports[1].Timestamp);
         Assert.Equal(90, reports[1].HeadingDegrees); // son bilinen rota korunur
         Assert.Equal(0, reports[1].SpeedMps);
+    }
+
+    [Fact]
+    public async Task Loaded_plugin_resolves_its_own_platform_specific_serial_port_dependency()
+    {
+        // Var olmayan port: bağlantı her denemede yeniden denenebilir bir IOException ile başarısız olur. Plugin
+        // System.IO.Ports'un platformdan bağımsız "desteklenmiyor" kopyasını yükleseydi PlatformNotSupportedException
+        // yeniden denenemeyen hata olarak ReadAsync'ten fırlardı.
+        using var catalog = Load(Host(
+            ("DataSource:Nmea:ReconnectSeconds", "0.1"),
+            ("DataSource:Nmea:Scenarios:seri:0:Callsign", "ALFA-1"),
+            ("DataSource:Nmea:Scenarios:seri:0:SerialPort", OperatingSystem.IsWindows() ? "COM250" : "/dev/ttyGEOCOMMAND250")));
+        var source = catalog.Find("Nmea")!.Source;
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+        {
+            await foreach (var _ in source.ReadAsync("seri", timeout.Token)) Assert.Fail("konum gelmemeliydi");
+        });
+
+        var ports = AssemblyLoadContext.GetLoadContext(source.GetType().Assembly)!.Assemblies
+            .Single(a => a.GetName().Name == "System.IO.Ports");
+        Assert.NotSame(AssemblyLoadContext.Default, AssemblyLoadContext.GetLoadContext(ports)); // API bu pakete hiç başvurmaz
+        var expected = Path.Combine("runtimes", OperatingSystem.IsWindows() ? "win" : "unix", "lib");
+        Assert.Contains(expected, ports.Location);
     }
 }

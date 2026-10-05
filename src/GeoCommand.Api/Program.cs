@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using GeoCommand.Api.Endpoints;
+using GeoCommand.Api.GrpcServices;
 using GeoCommand.Api.Hosting;
 using GeoCommand.Api.Hubs;
 using GeoCommand.Application;
@@ -7,6 +8,7 @@ using GeoCommand.Contracts;
 using GeoCommand.Infrastructure;
 using GeoCommand.Infrastructure.Persistence;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Options;
 using Serilog;
 
 // Başlangıç hataları için geçici logger; host kurulunca yapılandırmadaki logger ile değiştirilir.
@@ -36,9 +38,21 @@ try
 
     builder.Services.AddSignalR()
         .AddJsonProtocol(o => o.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
-    // Application katmanı yayınları IOperationsClient üzerinden yapar; burada SignalR'a bağlanır.
-    builder.Services.AddSingleton<IOperationsClient>(sp =>
-        sp.GetRequiredService<IHubContext<OperationsHub, IOperationsClient>>().Clients.All);
+
+    // gRPC: sahadan konum alma (Telemetry) ve dış sistemlere canlı yayın (OperationsFeed). Kestrel'de HTTP/2'ye ayrılmış
+    // ayrı bir uç noktadan sunulur (appsettings.json > Kestrel:Endpoints:Grpc).
+    builder.Services.AddGrpc(o => o.EnableDetailedErrors = builder.Environment.IsDevelopment());
+    builder.Services.AddGrpcReflection();
+    builder.Services.AddOptions<GrpcOptions>()
+        .Bind(builder.Configuration.GetSection(GrpcOptions.Section))
+        .Validate(o => o.SubscriberBufferSize is >= 1 and <= 100_000, "Grpc:SubscriberBufferSize 1-100000 arasında olmalı.")
+        .ValidateOnStart();
+    builder.Services.AddSingleton(sp => new OperationsFeedBroadcaster(sp.GetRequiredService<IOptions<GrpcOptions>>().Value.SubscriberBufferSize));
+
+    // Application katmanı yayınları IOperationsClient üzerinden yapar; burada SignalR'a ve gRPC abonelerine bağlanır.
+    builder.Services.AddSingleton<IOperationsClient>(sp => new FanOutOperationsClient(
+        sp.GetRequiredService<IHubContext<OperationsHub, IOperationsClient>>().Clients.All,
+        sp.GetRequiredService<OperationsFeedBroadcaster>()));
 
     builder.Services.AddSingleton<PositionSourceRunner>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<PositionSourceRunner>());
@@ -61,6 +75,9 @@ try
     app.MapHealthChecks("/health");
     app.MapHub<OperationsHub>(HubRoutes.Operations);
     app.MapGeoCommandEndpoints();
+    app.MapGrpcService<TelemetryService>();
+    app.MapGrpcService<OperationsFeedService>();
+    if (app.Environment.IsDevelopment()) app.MapGrpcReflectionService(); // grpcurl vb. araçlar için şema keşfi
 
     await app.RunAsync();
     return 0;

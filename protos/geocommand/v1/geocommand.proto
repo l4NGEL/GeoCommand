@@ -1,0 +1,129 @@
+// GeoCommand gRPC arayüzü (v1): sahadaki birimlerden konum alma ve dış sistemlere canlı durum yayını.
+//
+// REST/SignalR masaüstü istemcisi içindir; bu arayüz sistemler arası entegrasyon içindir (ikili Protobuf, HTTP/2,
+// akışlar). Her iki yol da aynı uygulama servislerini kullanır: doğrulama, bölge olayları ve kayıt tek yerdedir.
+syntax = "proto3";
+
+package geocommand.v1;
+
+option csharp_namespace = "GeoCommand.Grpc.V1";
+
+import "google/protobuf/timestamp.proto";
+
+// Konum alma. REST'teki POST /api/positions ile aynı doğrulama ve olay hattından geçer; kaynak etiketi "grpc".
+service Telemetry {
+  // Tek bildirim. Reddedilen bildirim gRPC durum koduyla döner:
+  //   INVALID_ARGUMENT (geçersiz alan), NOT_FOUND (tanımsız araç), ALREADY_EXISTS (yinelenen/eski zaman damgası),
+  //   ABORTED (eşzamanlı değişiklikle çakıştı, tekrar gönderilebilir).
+  rpc ReportPosition(PositionReport) returns (Vehicle);
+
+  // Sürekli akış (ör. bir birimin telemetri bağlantısı). Tek tek reddedilen bildirimler akışı kesmez;
+  // istemci akışı kapatınca sonuç özeti döner.
+  rpc StreamPositions(stream PositionReport) returns (StreamSummary);
+}
+
+// Dış sistemlere canlı araç durumu ve olay yayını (masaüstü istemcideki SignalR kanalının sistemler arası karşılığı).
+service OperationsFeed {
+  // İstemci iptal edene kadar açık kalan sunucu akışı. Sunucunun istemci başına tamponu dolarsa (istemci
+  // yetişemiyorsa) akış RESOURCE_EXHAUSTED ile kapanır; istemci include_snapshot ile yeniden abone olup
+  // güncel duruma döner. Sessizce mesaj atlanmaz.
+  rpc Subscribe(SubscribeRequest) returns (stream OperationsUpdate);
+}
+
+message PositionReport {
+  string callsign = 1;
+  double latitude = 2;
+  double longitude = 3;
+  double speed_mps = 4;
+  double heading_degrees = 5;
+  // Zorunlu: ölçümün alındığı an (UTC).
+  google.protobuf.Timestamp timestamp = 6;
+}
+
+message StreamSummary {
+  int64 received = 1;
+  int64 accepted = 2;
+  int64 invalid = 3;
+  int64 unknown_vehicle = 4;
+  int64 duplicate = 5;
+  int64 conflict = 6;
+  // Reddedilen bildirimlerin ilk 50'si (akıştaki sırası ve nedeni).
+  repeated Rejection rejections = 7;
+}
+
+message Rejection {
+  int64 index = 1;
+  string callsign = 2;
+  RejectionReason reason = 3;
+  repeated string errors = 4;
+}
+
+enum RejectionReason {
+  REJECTION_REASON_UNSPECIFIED = 0;
+  REJECTION_REASON_INVALID = 1;
+  REJECTION_REASON_UNKNOWN_VEHICLE = 2;
+  REJECTION_REASON_DUPLICATE = 3;
+  REJECTION_REASON_CONFLICT = 4;
+}
+
+message SubscribeRequest {
+  // Boş: tüm araçlar. Büyük/küçük harf duyarsız.
+  repeated string callsigns = 1;
+  // true: önce her aracın güncel durumu (snapshot = true) gönderilir, ardından canlı güncellemeler.
+  bool include_snapshot = 2;
+}
+
+message OperationsUpdate {
+  oneof update {
+    Vehicle vehicle = 1;
+    GeoEvent event = 2;
+  }
+  // Abonelik başındaki anlık durumun parçası mı (canlı güncelleme değil).
+  bool snapshot = 3;
+}
+
+enum VehicleState {
+  VEHICLE_STATE_UNKNOWN = 0;
+  VEHICLE_STATE_IDLE = 1;
+  VEHICLE_STATE_MOVING = 2;
+  VEHICLE_STATE_ON_MISSION = 3;
+  VEHICLE_STATE_OFFLINE = 4;
+}
+
+message Vehicle {
+  string id = 1;
+  string callsign = 2;
+  VehicleState state = 3;
+  // Henüz konum bildirmemiş araçta yok.
+  optional double latitude = 4;
+  optional double longitude = 5;
+  double speed_mps = 6;
+  double heading_degrees = 7;
+  google.protobuf.Timestamp last_update = 8;
+  // Aktif görev yoksa boş.
+  string active_mission_id = 9;
+}
+
+enum GeoEventType {
+  GEO_EVENT_TYPE_UNSPECIFIED = 0;
+  GEO_EVENT_TYPE_ZONE_ENTERED = 1;
+  GEO_EVENT_TYPE_ZONE_EXITED = 2;
+  GEO_EVENT_TYPE_MISSION_ASSIGNED = 3;
+  GEO_EVENT_TYPE_MISSION_STATUS_CHANGED = 4;
+  GEO_EVENT_TYPE_VEHICLE_OFFLINE = 5;
+  GEO_EVENT_TYPE_VEHICLE_ONLINE = 6;
+}
+
+message GeoEvent {
+  string id = 1;
+  GeoEventType type = 2;
+  string vehicle_id = 3;
+  string callsign = 4;
+  // İlgisizse boş.
+  string zone_id = 5;
+  string mission_id = 6;
+  google.protobuf.Timestamp occurred_at = 7;
+  string message = 8;
+  optional double latitude = 9;
+  optional double longitude = 10;
+}

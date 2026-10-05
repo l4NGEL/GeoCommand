@@ -8,23 +8,30 @@ using Microsoft.Extensions.Logging;
 namespace GeoCommand.Plugins.Nmea;
 
 /// <summary>
-/// GPS alıcılarından NMEA 0183 <c>$xxRMC</c> cümlelerini TCP üzerinden okur (NMEA-over-TCP ağ geçitleri; 10110
-/// standart porttur). Bir senaryo, her biri bir araca ait bir veya daha çok akıştan oluşur; akışlar paralel okunur.
-/// Bağlantı düşerse <c>ReconnectSeconds</c> sonra yeniden denenir; bir akışın hatası diğerlerini durdurmaz.
+/// GPS alıcılarından NMEA 0183 <c>$xxRMC</c> cümlelerini okur: RS-232/USB-seri port üzerinden veya TCP üzerinden
+/// (NMEA-over-TCP ağ geçitleri; 10110 standart porttur). Bir senaryo, her biri bir araca ait bir veya daha çok akıştan
+/// oluşur; akışlar paralel okunur ve aynı senaryoda seri ve TCP akışları karışık olabilir. Bağlantı düşerse
+/// (kablo çekildi, port başka uygulamada, ağ geçidi kapandı) <c>ReconnectSeconds</c> sonra yeniden denenir; bir akışın
+/// hatası diğerlerini durdurmaz.
 /// </summary>
-[PositionSource(TypeName, Description = "NMEA 0183 ($xxRMC) GPS akışı, TCP üzerinden")]
+[PositionSource(TypeName, Description = "NMEA 0183 ($xxRMC) GPS akışı, RS-232 seri port veya TCP üzerinden")]
 public sealed class NmeaPositionSource : IPositionSource
 {
     public const string TypeName = "Nmea";
     public const string ReportSource = "nmea";
 
     private readonly IPositionSourceHost _host;
+    private readonly INmeaConnector _connector;
     private readonly ILogger _logger;
 
     [ImportingConstructor]
-    public NmeaPositionSource(IPositionSourceHost host)
+    public NmeaPositionSource(IPositionSourceHost host) : this(host, NmeaConnector.Instance) { }
+
+    /// <summary>Testler için: gerçek seri port veya soket yerine sahte bağlantı.</summary>
+    internal NmeaPositionSource(IPositionSourceHost host, INmeaConnector connector)
     {
         _host = host;
+        _connector = connector;
         _logger = host.LoggerFactory.CreateLogger<NmeaPositionSource>();
     }
 
@@ -48,7 +55,7 @@ public sealed class NmeaPositionSource : IPositionSource
         // Sınırlı kanal: tüketici (veritabanı) yavaşlarsa soket okuması da yavaşlar, bellek büyümez.
         var channel = Channel.CreateBounded<PositionReport>(new BoundedChannelOptions(256) { SingleReader = true });
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var readers = streams.Select(s => ReadStreamAsync(s, settings.ReconnectDelay, channel.Writer, stop.Token)).ToArray();
+        var readers = streams.Select(s => RunStreamAsync(s, settings.ReconnectDelay, channel.Writer, stop.Token)).ToArray();
         _ = Task.WhenAll(readers).ContinueWith(_ => channel.Writer.TryComplete(), TaskScheduler.Default);
 
         try
@@ -63,6 +70,27 @@ public sealed class NmeaPositionSource : IPositionSource
         }
     }
 
+    /// <summary>
+    /// Yeniden denenemeyen bir hata (ör. işletim sisteminin kabul etmediği port adı) kaynağın tamamını durdurur:
+    /// kanal hatayla kapatılır, hata API'deki kaynak durumunda görünür. Diğer akışlar iptal edilir.
+    /// </summary>
+    private async Task RunStreamAsync(NmeaStream stream, TimeSpan reconnectDelay, ChannelWriter<PositionReport> writer, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ReadStreamAsync(stream, reconnectDelay, writer, cancellationToken);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogError(ex, "NMEA akışı yeniden denenemeyen bir hatayla durdu. {Stream}", stream);
+            writer.TryComplete(new InvalidOperationException($"{stream}: {ex.Message}", ex));
+        }
+        catch (Exception ex) when (cancellationToken.IsCancellationRequested || ex is ChannelClosedException)
+        {
+            // Durduruldu ya da başka bir akış kanalı hatayla kapattı.
+        }
+    }
+
     private async Task ReadStreamAsync(NmeaStream stream, TimeSpan reconnectDelay, ChannelWriter<PositionReport> writer, CancellationToken cancellationToken)
     {
         var lastCourse = 0.0;
@@ -71,12 +99,12 @@ public sealed class NmeaPositionSource : IPositionSource
             long accepted = 0, noFix = 0, invalid = 0;
             try
             {
-                using var client = new TcpClient();
-                await client.ConnectAsync(stream.Host, stream.Port, cancellationToken);
+                await using var connection = await _connector.ConnectAsync(stream.Endpoint, cancellationToken);
+                // Seri portun bekleyen okuması iptal belirtecini dinlemez; iptalde akışı kapatmak okumayı da bitirir.
+                await using var abort = cancellationToken.Register(static c => ((Stream)c!).Dispose(), connection);
                 _logger.LogInformation("NMEA akışına bağlanıldı. {Stream}", stream);
 
-                await using var network = client.GetStream();
-                var reader = new NmeaLineReader(network);
+                var reader = new NmeaLineReader(connection);
                 while (await reader.ReadLineAsync(cancellationToken) is { } line)
                 {
                     if (line.Length == 0) continue;
@@ -102,8 +130,9 @@ public sealed class NmeaPositionSource : IPositionSource
                 _logger.LogWarning("NMEA akışı karşı taraftan kapatıldı. {Stream} Kabul={Accepted} KonumYok={NoFix} Geçersiz={Invalid} UzunSatır={Discarded}",
                     stream, accepted, noFix, invalid, reader.DiscardedLines);
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (Exception) when (cancellationToken.IsCancellationRequested)
             {
+                // İptalde kapatılan akış OperationCanceledException yerine ObjectDisposedException/IOException fırlatabilir.
                 break;
             }
             catch (Exception ex) when (ex is SocketException or IOException)
